@@ -103,10 +103,10 @@ function normalizeRandom(random: () => number): number {
   return Math.min(Math.max(random(), 0), 0.9999999999999999);
 }
 
-export function selectProxyGeography(random: () => number = Math.random): FingerprintGeography {
-  const index = Math.floor(normalizeRandom(random) * proxyGeographies.length);
-  const geography = proxyGeographies[index];
-  if (!geography) throw new Error("No proxy fingerprint geography available");
+export function selectProxyGeography(countryCode: string): FingerprintGeography {
+  const normalized = countryCode.trim().toUpperCase();
+  const geography = proxyGeographies.find((candidate) => candidate.countryCode === normalized);
+  if (!geography) throw new Error(`Unsupported proxy fingerprint country: ${normalized}`);
   return {
     ...geography,
     locales: [...geography.locales],
@@ -168,10 +168,10 @@ function fingerprintSignature(generated: BrowserFingerprintWithHeaders): string 
 
 export function createBrowserIdentity(
   browserVersion: string,
-  useProxy: boolean,
+  proxyCountryCode?: string,
   random: () => number = Math.random,
 ): BrowserIdentity {
-  const proxyGeography = useProxy ? selectProxyGeography(random) : undefined;
+  const proxyGeography = proxyCountryCode ? selectProxyGeography(proxyCountryCode) : undefined;
   const geography = proxyGeography ?? localGeography();
   const generated = generator(browserVersion, geography.operatingSystems).getFingerprint({
     locales: geography.locales,

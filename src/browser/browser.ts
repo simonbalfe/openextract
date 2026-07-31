@@ -6,7 +6,7 @@ import {
   createBrowserIdentity,
   installBrowserIdentity,
 } from "./fingerprint.ts";
-import { createProxySession, hasProxy } from "./proxy.ts";
+import { createProxySession, hasProxy, proxyCountryCode } from "./proxy.ts";
 import { hasCapsolver, solveCloudflare } from "./solvers.ts";
 
 export async function launchBrowser(attempts = 6): Promise<Browser> {
@@ -37,8 +37,8 @@ export async function render(
   options: BrowserOptions,
 ): Promise<string> {
   const useProxy = options.useProxy && hasProxy;
-  const identity = createBrowserIdentity(browser.version(), useProxy);
-  const session = useProxy ? createProxySession(identity.countryCode) : null;
+  const identity = createBrowserIdentity(browser.version(), useProxy ? proxyCountryCode : undefined);
+  const session = useProxy ? createProxySession() : null;
 
   async function createContext(userAgent?: string) {
     const context = await browser.newContext({

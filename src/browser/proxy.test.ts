@@ -1,16 +1,31 @@
 import { describe, expect, test } from "bun:test";
-import { formatProxyPassword } from "./proxy.ts";
+import { parseProxy } from "./proxy.ts";
 
-describe("proxy sessions", () => {
-  test("matches proxy geography to the browser identity", () => {
-    expect(formatProxyPassword("secret", "abc12345", "gb")).toBe(
-      "secret_country-GB_session-abc12345_lifetime-10",
-    );
+describe("proxy configuration", () => {
+  test("parses an authenticated HTTP proxy", () => {
+    expect(parseProxy("http://user:p%40ss@proxy.example:8080", "gb")).toEqual({
+      browserProxy: {
+        server: "http://proxy.example:8080",
+        username: "user",
+        password: "p@ss",
+      },
+      solverProxy: "proxy.example:8080:user:p@ss",
+      countryCode: "GB",
+    });
   });
 
-  test("supports sessions without explicit geography", () => {
-    expect(formatProxyPassword("secret", "abc12345")).toBe(
-      "secret_session-abc12345_lifetime-10",
-    );
+  test("parses an unauthenticated SOCKS proxy with its default port", () => {
+    expect(parseProxy("socks5://proxy.example")).toEqual({
+      browserProxy: { server: "socks5://proxy.example:1080" },
+      solverProxy: "proxy.example:1080",
+    });
+  });
+
+  test("allows proxying to be disabled", () => {
+    expect(parseProxy("")).toBeUndefined();
+  });
+
+  test("rejects provider-specific URL paths", () => {
+    expect(() => parseProxy("http://proxy.example:8080/session/123")).toThrow();
   });
 });

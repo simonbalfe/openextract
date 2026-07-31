@@ -17,6 +17,8 @@ docker run --rm -p 8081:8081 ghcr.io/simonbalfe/openextract:latest
 
 Images are published for `linux/amd64` and `linux/arm64`. Copy `.env.example` when enabling optional providers.
 
+Set `OPENEXTRACT_PROXY_URL` to a standard `http://`, `https://`, `socks4://`, or `socks5://` proxy URL. Credentials belong in the URL. `OPENEXTRACT_PROXY_COUNTRY` optionally aligns the browser locale and timezone with a fixed proxy country.
+
 ## API
 
 Health check:
