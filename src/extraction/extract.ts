@@ -1,6 +1,5 @@
 import { tavily } from "@tavily/core";
 import { Impit } from "impit";
-import type { BrowserlessRender } from "../browser/browserless.ts";
 import { extractHTML } from "./html.ts";
 import { pdfToText } from "./pdf.ts";
 import { isBlockPageContent, needsBrowser } from "./render.ts";
@@ -23,7 +22,6 @@ type Rung = {
 type BrowserRender = (url: string, options: BrowserOptions) => Promise<string>;
 
 type Capabilities = {
-  browserless?: BrowserlessRender;
   proxy: boolean;
   solver: boolean;
 };
@@ -104,19 +102,6 @@ function browserRetriever(render: BrowserRender, useProxy: boolean, solve: boole
   };
 }
 
-function browserlessRetriever(render?: BrowserlessRender): (url: string) => Promise<Retrieved> {
-  return async (url) => {
-    if (!render) throw new Error("Browserless is not configured");
-    const result = await render(url);
-    const extracted = extractHTML(result.html, url);
-    return {
-      ...extracted,
-      contentType: "html",
-      ...(result.status === undefined ? {} : { status: result.status }),
-    };
-  };
-}
-
 function tavilyRetriever(apiKey: string): (url: string) => Promise<Retrieved> {
   const client = tavily({ apiKey });
   return async (url) => {
@@ -133,11 +118,6 @@ function ladder(render: BrowserRender, capabilities: Capabilities): Rung[] {
   const tavilyAPIKey = process.env.TAVILY_API_KEY ?? "";
   return [
     { provider: "impit", enabled: true, retrieve: retrieveWithImpit },
-    {
-      provider: "browserless",
-      enabled: Boolean(capabilities.browserless),
-      retrieve: browserlessRetriever(capabilities.browserless),
-    },
     { provider: "patchright", enabled: true, retrieve: browserRetriever(render, false, false) },
     {
       provider: "patchright+proxy",

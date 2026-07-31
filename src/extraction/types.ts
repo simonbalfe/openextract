@@ -1,6 +1,5 @@
 export type ExtractProvider =
   | "impit"
-  | "browserless"
   | "patchright"
   | "patchright+proxy"
   | "patchright+solver"

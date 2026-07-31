@@ -8,9 +8,6 @@ describe("parseEnvironment", () => {
       OPENEXTRACT_MAX_CONCURRENCY: 20,
       OPENEXTRACT_BROWSER_CONCURRENCY: 4,
       OPENEXTRACT_MAX_WAITING: 100,
-      BROWSERLESS_URL: undefined,
-      BROWSERLESS_TOKEN: undefined,
-      BROWSERLESS_TIMEOUT_MS: 60_000,
     });
   });
 
@@ -21,18 +18,12 @@ describe("parseEnvironment", () => {
         OPENEXTRACT_MAX_CONCURRENCY: "12",
         OPENEXTRACT_BROWSER_CONCURRENCY: "3",
         OPENEXTRACT_MAX_WAITING: "50",
-        BROWSERLESS_URL: "http://browserless:3000",
-        BROWSERLESS_TOKEN: "token",
-        BROWSERLESS_TIMEOUT_MS: "45000",
       }),
     ).toEqual({
       PORT: 9000,
       OPENEXTRACT_MAX_CONCURRENCY: 12,
       OPENEXTRACT_BROWSER_CONCURRENCY: 3,
       OPENEXTRACT_MAX_WAITING: 50,
-      BROWSERLESS_URL: "http://browserless:3000",
-      BROWSERLESS_TOKEN: "token",
-      BROWSERLESS_TIMEOUT_MS: 45_000,
     });
   });
 
@@ -47,14 +38,5 @@ describe("parseEnvironment", () => {
 
   test("rejects fractional values", () => {
     expect(() => parseEnvironment({ OPENEXTRACT_MAX_CONCURRENCY: "2.5" })).toThrow();
-  });
-
-  test("normalizes empty optional Browserless settings", () => {
-    expect(
-      parseEnvironment({ BROWSERLESS_URL: "", BROWSERLESS_TOKEN: "" }),
-    ).toMatchObject({
-      BROWSERLESS_URL: undefined,
-      BROWSERLESS_TOKEN: undefined,
-    });
   });
 });

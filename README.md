@@ -5,10 +5,9 @@ OpenExtract returns readable page content and links from a URL. It starts with d
 The extraction ladder is:
 
 1. direct HTTP with Impit
-2. Browserless, when configured
-3. local Patchright
-4. Patchright with proxy and solver, when configured
-5. Tavily, when configured
+2. local Patchright
+3. Patchright with proxy and solver, when configured
+4. Tavily, when configured
 
 ## Run
 
@@ -17,16 +16,6 @@ docker run --rm -p 8081:8081 ghcr.io/simonbalfe/openextract:latest
 ```
 
 Images are published for `linux/amd64` and `linux/arm64`. Copy `.env.example` when enabling optional providers.
-
-For a self-hosted Browserless companion:
-
-```sh
-docker network create openextract
-docker run -d --name browserless --network openextract ghcr.io/browserless/chromium:v2.55.2
-docker run --rm --network openextract -p 8081:8081 \
-  -e BROWSERLESS_URL=http://browserless:3000 \
-  ghcr.io/simonbalfe/openextract:latest
-```
 
 ## API
 

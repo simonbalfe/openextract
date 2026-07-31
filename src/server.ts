@@ -1,6 +1,5 @@
 import { z } from "zod";
 import { launchBrowser, render } from "./browser/browser.ts";
-import { createBrowserlessRender } from "./browser/browserless.ts";
 import { hasProxy } from "./browser/proxy.ts";
 import { hasSolver, solverOrder } from "./browser/solvers.ts";
 import { ConcurrencyLimiter, QueueAbortedError, QueueSaturatedError } from "./concurrency/limiter.ts";
@@ -10,15 +9,6 @@ import { firstLine } from "./support/errors.ts";
 
 const extractRequestSchema = z.object({ url: z.string() });
 const environment = parseEnvironment(process.env);
-const browserless = environment.BROWSERLESS_URL
-  ? createBrowserlessRender({
-      baseURL: environment.BROWSERLESS_URL,
-      ...(environment.BROWSERLESS_TOKEN
-        ? { token: environment.BROWSERLESS_TOKEN }
-        : {}),
-      timeoutMS: environment.BROWSERLESS_TIMEOUT_MS,
-    })
-  : undefined;
 const extractionLimiter = new ConcurrencyLimiter(
   environment.OPENEXTRACT_MAX_CONCURRENCY,
   environment.OPENEXTRACT_MAX_WAITING,
@@ -38,7 +28,6 @@ const server = Bun.serve({
       return Response.json({
         ok: true,
         fingerprints: "rotating",
-        browserless: Boolean(browserless),
         proxy: hasProxy,
         solvers: solverOrder(),
         limits: {
@@ -58,7 +47,6 @@ const server = Bun.serve({
               (target, options) =>
                 browserLimiter.run(() => render(browser, target, options), request.signal),
               {
-                ...(browserless ? { browserless } : {}),
                 proxy: hasProxy,
                 solver: hasSolver,
               },
@@ -103,5 +91,5 @@ process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
 
 console.log(
-  `openextract service listening port=${server.port} browserless=${browserless ? "on" : "off"} fingerprints=rotating proxy=${hasProxy ? "on" : "off"} solvers=${solverOrder().join(",") || "none"} concurrency=${environment.OPENEXTRACT_MAX_CONCURRENCY} browserConcurrency=${environment.OPENEXTRACT_BROWSER_CONCURRENCY} maxWaiting=${environment.OPENEXTRACT_MAX_WAITING}`,
+  `openextract service listening port=${server.port} fingerprints=rotating proxy=${hasProxy ? "on" : "off"} solvers=${solverOrder().join(",") || "none"} concurrency=${environment.OPENEXTRACT_MAX_CONCURRENCY} browserConcurrency=${environment.OPENEXTRACT_BROWSER_CONCURRENCY} maxWaiting=${environment.OPENEXTRACT_MAX_WAITING}`,
 );
