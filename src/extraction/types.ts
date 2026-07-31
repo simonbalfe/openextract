@@ -1,4 +1,10 @@
-export type ExtractProvider = "impit" | "patchright" | "patchright+proxy" | "patchright+solver" | "tavily";
+export type ExtractProvider =
+  | "impit"
+  | "browserless"
+  | "patchright"
+  | "patchright+proxy"
+  | "patchright+solver"
+  | "tavily";
 
 export type ExtractOutcome = "ok" | "dead" | "failed";
 

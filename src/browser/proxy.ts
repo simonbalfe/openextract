@@ -17,9 +17,23 @@ const proxyConfig = {
 
 export const hasProxy = Boolean(proxyConfig.username && proxyConfig.password && proxyConfig.gateway);
 
-export function createProxySession(): ProxySession {
-  const sessionID = `${Date.now().toString(36)}${Math.floor(Math.random() * 1e6).toString(36)}`;
-  const password = `${proxyConfig.password}_session-${sessionID}`;
+export function formatProxyPassword(
+  password: string,
+  sessionID: string,
+  countryCode?: string,
+): string {
+  const country = countryCode ? `_country-${countryCode.toUpperCase()}` : "";
+  return `${password}${country}_session-${sessionID}_lifetime-10`;
+}
+
+function createSessionID(): string {
+  const alphabet = "abcdefghijklmnopqrstuvwxyz0123456789";
+  const bytes = crypto.getRandomValues(new Uint8Array(10));
+  return Array.from(bytes, (value) => alphabet[value % alphabet.length]).join("");
+}
+
+export function createProxySession(countryCode?: string): ProxySession {
+  const password = formatProxyPassword(proxyConfig.password, createSessionID(), countryCode);
   return {
     browserProxy: {
       server: `http://${proxyConfig.gateway}`,

@@ -1,7 +1,9 @@
 import { tavily } from "@tavily/core";
 import { Impit } from "impit";
+import type { BrowserlessRender } from "../browser/browserless.ts";
 import { extractHTML } from "./html.ts";
 import { pdfToText } from "./pdf.ts";
+import { isBlockPageContent, needsBrowser } from "./render.ts";
 import type { BrowserOptions, ExtractAttempt, ExtractProvider, ExtractResult } from "./types.ts";
 
 type Retrieved = {
@@ -9,6 +11,7 @@ type Retrieved = {
   contentType: ExtractResult["contentType"];
   links: string[];
   status?: number;
+  renderRequired?: boolean;
 };
 
 type Rung = {
@@ -20,25 +23,13 @@ type Rung = {
 type BrowserRender = (url: string, options: BrowserOptions) => Promise<string>;
 
 type Capabilities = {
+  browserless?: BrowserlessRender;
   proxy: boolean;
   solver: boolean;
 };
 
 const MAX_CHARACTERS = 12_000;
 const DEAD_STATUSES = new Set([401, 404, 410]);
-const SHELL_MARKERS = [
-  "enable javascript",
-  "please enable js",
-  "you need to enable javascript",
-  "checking your browser",
-  "captcha",
-  "are you a human",
-  "access denied",
-  "cf-browser-verification",
-  "request unsuccessful",
-  "ddos protection",
-];
-
 const impit = new Impit({ browser: "chrome", timeout: 15_000 });
 
 function debug(message: string): void {
@@ -56,9 +47,7 @@ function validateURL(input: string): string {
 function isUsable(content: string, contentType: ExtractResult["contentType"]): boolean {
   if (contentType === "pdf") return content.trim().length >= 10;
   const value = content.trim();
-  if (!value) return false;
-  const head = value.slice(0, 4000).toLowerCase();
-  return !SHELL_MARKERS.some((marker) => head.includes(marker));
+  return Boolean(value) && !isBlockPageContent(value);
 }
 
 function bounded(content: string): string {
@@ -72,12 +61,14 @@ function classify(result: Retrieved): ExtractAttempt["outcome"] {
     return result.status === 403 || result.status === 429 ? "blocked" : "http-error";
   }
   if (!result.content) return "empty";
+  if (result.renderRequired) return "blocked";
   return isUsable(result.content, result.contentType) ? "ok" : "blocked";
 }
 
 function detail(result: Retrieved): string | undefined {
   if (result.status !== undefined && result.status >= 400) return `HTTP ${result.status}`;
   if (!result.content) return "No content returned";
+  if (result.renderRequired) return "HTTP response requires browser rendering";
   if (!isUsable(result.content, result.contentType)) return "Response appears to be a JavaScript shell or block page";
   return undefined;
 }
@@ -95,8 +86,9 @@ async function retrieveWithImpit(url: string): Promise<Retrieved> {
     };
   }
   if (header.includes("html") || !header) {
-    const extracted = extractHTML(await response.text(), url);
-    return { ...extracted, contentType: "html", status: response.status };
+    const html = await response.text();
+    const extracted = extractHTML(html, url);
+    return { ...extracted, contentType: "html", status: response.status, renderRequired: needsBrowser(html) };
   }
   if (header.includes("text")) {
     return { content: (await response.text()).trim(), contentType: "text", links: [], status: response.status };
@@ -109,6 +101,19 @@ function browserRetriever(render: BrowserRender, useProxy: boolean, solve: boole
     const html = await render(url, { useProxy, solve });
     const extracted = extractHTML(html, url);
     return { ...extracted, contentType: "html", status: 200 };
+  };
+}
+
+function browserlessRetriever(render?: BrowserlessRender): (url: string) => Promise<Retrieved> {
+  return async (url) => {
+    if (!render) throw new Error("Browserless is not configured");
+    const result = await render(url);
+    const extracted = extractHTML(result.html, url);
+    return {
+      ...extracted,
+      contentType: "html",
+      ...(result.status === undefined ? {} : { status: result.status }),
+    };
   };
 }
 
@@ -128,6 +133,11 @@ function ladder(render: BrowserRender, capabilities: Capabilities): Rung[] {
   const tavilyAPIKey = process.env.TAVILY_API_KEY ?? "";
   return [
     { provider: "impit", enabled: true, retrieve: retrieveWithImpit },
+    {
+      provider: "browserless",
+      enabled: Boolean(capabilities.browserless),
+      retrieve: browserlessRetriever(capabilities.browserless),
+    },
     { provider: "patchright", enabled: true, retrieve: browserRetriever(render, false, false) },
     {
       provider: "patchright+proxy",

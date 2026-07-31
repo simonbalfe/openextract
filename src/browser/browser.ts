@@ -2,13 +2,24 @@ import { chromium, type Browser } from "patchright";
 import type { BrowserOptions } from "../extraction/types.ts";
 import { firstLine } from "../support/errors.ts";
 import { hasTurnstile, isChallenge, solveTurnstile } from "./challenges.ts";
+import {
+  createBrowserIdentity,
+  installBrowserIdentity,
+} from "./fingerprint.ts";
 import { createProxySession, hasProxy } from "./proxy.ts";
 import { hasCapsolver, solveCloudflare } from "./solvers.ts";
 
 export async function launchBrowser(attempts = 6): Promise<Browser> {
   for (let attempt = 1; attempt <= attempts; attempt++) {
     try {
-      const browser = await chromium.launch({ headless: false });
+      const browser = await chromium.launch({
+        headless: false,
+        args: [
+          "--enable-unsafe-swiftshader",
+          "--use-angle=swiftshader",
+          "--use-gl=angle",
+        ],
+      });
       console.log(`browser launched attempt=${attempt}`);
       return browser;
     } catch (error) {
@@ -25,12 +36,21 @@ export async function render(
   target: string,
   options: BrowserOptions,
 ): Promise<string> {
-  const session = options.useProxy && hasProxy ? createProxySession() : null;
-  const contextOptions = {
-    viewport: null,
-    ...(session ? { proxy: session.browserProxy } : {}),
-  };
-  let context = await browser.newContext(contextOptions);
+  const useProxy = options.useProxy && hasProxy;
+  const identity = createBrowserIdentity(browser.version(), useProxy);
+  const session = useProxy ? createProxySession(identity.countryCode) : null;
+
+  async function createContext(userAgent?: string) {
+    const context = await browser.newContext({
+      ...identity.contextOptions,
+      ...(session ? { proxy: session.browserProxy } : {}),
+      ...(userAgent ? { userAgent } : {}),
+    });
+    if (!userAgent) await installBrowserIdentity(context, identity);
+    return context;
+  }
+
+  let context = await createContext();
   try {
     let page = await context.newPage();
     await page.goto(target, { waitUntil: "domcontentloaded", timeout: 30000 });
@@ -52,10 +72,7 @@ export async function render(
         url: target,
       }));
       await context.close().catch(() => {});
-      context = await browser.newContext({
-        ...contextOptions,
-        ...(solution.userAgent ? { userAgent: solution.userAgent } : {}),
-      });
+      context = await createContext(solution.userAgent);
       if (cookies.length > 0) await context.addCookies(cookies);
       page = await context.newPage();
       await page.goto(target, { waitUntil: "domcontentloaded", timeout: 30000 });
