@@ -10,7 +10,6 @@ export type ExtractOutcome = "ok" | "dead" | "failed";
 export type BrowserOptions = {
   useProxy: boolean;
   solve: boolean;
-  solver?: string;
 };
 
 export type ExtractAttempt = {

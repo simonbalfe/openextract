@@ -67,7 +67,6 @@ export async function solveTurnstile(
   page: Page,
   target: string,
   initialHTML: string,
-  preferred?: string,
 ): Promise<string> {
   const sitekey = initialHTML.match(turnstileSitekeyPattern)?.[1] ?? null;
   if (!sitekey) return initialHTML;
@@ -78,13 +77,13 @@ export async function solveTurnstile(
   let html = await page.content();
   if (turnstileSolved(html) || !hasTurnstile(html)) return html;
 
-  if (solverOrder(preferred).length > 0) {
-    const solution = await solveToken("turnstile", target, sitekey, preferred).catch((error) => {
+  if (solverOrder().length > 0) {
+    const token = await solveToken(target, sitekey).catch((error) => {
       console.error(`turnstile solver failed error=${firstLine(error)}`);
       return null;
     });
-    if (solution?.token) {
-      await injectTurnstileToken(page, solution.token);
+    if (token) {
+      await injectTurnstileToken(page, token);
       await page.waitForTimeout(2500);
       await page.waitForLoadState("networkidle", { timeout: 8000 }).catch(() => {});
       html = await page.content();

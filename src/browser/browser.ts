@@ -61,7 +61,7 @@ export async function render(
     let html = await page.content();
 
     if (options.solve && hasTurnstile(html) && !isChallenge(html)) {
-      html = await solveTurnstile(page, target, html, options.solver);
+      html = await solveTurnstile(page, target, html);
     }
 
     if (options.solve && session && hasCapsolver && isChallenge(html)) {

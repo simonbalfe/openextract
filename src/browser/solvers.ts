@@ -1,7 +1,6 @@
 import { z } from "zod";
 import { firstLine } from "../support/errors.ts";
 
-type TokenVendor = "turnstile" | "hcaptcha" | "recaptcha";
 export type SolverName = "capsolver" | "twocaptcha";
 
 const solverSolutionSchema = z.object({
@@ -25,7 +24,7 @@ export type SolverSolution = z.infer<typeof solverSolutionSchema>;
 type SolverDefinition = {
   key: string;
   baseURL: string;
-  tasks: Record<TokenVendor, (url: string, sitekey: string) => Record<string, unknown>>;
+  task: (url: string, sitekey: string) => Record<string, unknown>;
 };
 
 const capsolverKey = process.env.CAPSOLVER_API_KEY ?? "";
@@ -36,58 +35,28 @@ const solvers = {
   capsolver: {
     key: capsolverKey,
     baseURL: "https://api.capsolver.com",
-    tasks: {
-      turnstile: (url: string, sitekey: string) => ({
-        type: "AntiTurnstileTaskProxyLess",
-        websiteURL: url,
-        websiteKey: sitekey,
-      }),
-      hcaptcha: (url: string, sitekey: string) => ({
-        type: "HCaptchaTaskProxyLess",
-        websiteURL: url,
-        websiteKey: sitekey,
-      }),
-      recaptcha: (url: string, sitekey: string) => ({
-        type: "ReCaptchaV2TaskProxyLess",
-        websiteURL: url,
-        websiteKey: sitekey,
-      }),
-    },
+    task: (url: string, sitekey: string) => ({
+      type: "AntiTurnstileTaskProxyLess",
+      websiteURL: url,
+      websiteKey: sitekey,
+    }),
   },
   twocaptcha: {
     key: twoCaptchaKey,
     baseURL: "https://api.2captcha.com",
-    tasks: {
-      turnstile: (url: string, sitekey: string) => ({
-        type: "TurnstileTaskProxyless",
-        websiteURL: url,
-        websiteKey: sitekey,
-      }),
-      hcaptcha: (url: string, sitekey: string) => ({
-        type: "HCaptchaTaskProxyless",
-        websiteURL: url,
-        websiteKey: sitekey,
-      }),
-      recaptcha: (url: string, sitekey: string) => ({
-        type: "RecaptchaV2TaskProxyless",
-        websiteURL: url,
-        websiteKey: sitekey,
-      }),
-    },
+    task: (url: string, sitekey: string) => ({
+      type: "TurnstileTaskProxyless",
+      websiteURL: url,
+      websiteKey: sitekey,
+    }),
   },
 } satisfies Record<SolverName, SolverDefinition>;
 
 export const hasSolver = solverNames.some((name) => Boolean(solvers[name].key));
 export const hasCapsolver = Boolean(capsolverKey);
 
-export function solverOrder(preferred?: string): SolverName[] {
-  const available = solverNames.filter((name) => solvers[name].key);
-  if (preferred === "capsolver" || preferred === "twocaptcha") {
-    if (solvers[preferred].key) {
-      return [preferred, ...available.filter((name) => name !== preferred)];
-    }
-  }
-  return [...available];
+export function solverOrder(): SolverName[] {
+  return solverNames.filter((name) => solvers[name].key);
 }
 
 async function createSolverTask(
@@ -128,26 +97,24 @@ async function createSolverTask(
 }
 
 export async function solveToken(
-  vendor: TokenVendor,
   target: string,
   sitekey: string | null,
-  preferred?: string,
-): Promise<{ token: string; provider: SolverName }> {
-  if (!sitekey) throw new Error(`no sitekey for ${vendor}`);
+): Promise<string> {
+  if (!sitekey) throw new Error("no sitekey for turnstile");
   let lastError: unknown;
-  for (const name of solverOrder(preferred)) {
+  for (const name of solverOrder()) {
     try {
       const solver = solvers[name];
-      const solution = await createSolverTask(solver.baseURL, solver.key, solver.tasks[vendor](target, sitekey));
+      const solution = await createSolverTask(solver.baseURL, solver.key, solver.task(target, sitekey));
       const token = solution.token ?? solution.gRecaptchaResponse;
-      if (token) return { token, provider: name };
+      if (token) return token;
       lastError = new Error("empty solution");
     } catch (error) {
       lastError = error;
-      console.error(`solver failed provider=${name} vendor=${vendor} error=${firstLine(error)}`);
+      console.error(`solver failed provider=${name} vendor=turnstile error=${firstLine(error)}`);
     }
   }
-  throw new Error(`no token for ${vendor}: ${firstLine(lastError ?? "no solver configured")}`);
+  throw new Error(`no token for turnstile: ${firstLine(lastError ?? "no solver configured")}`);
 }
 
 export async function solveCloudflare(target: string, proxy: string): Promise<SolverSolution> {

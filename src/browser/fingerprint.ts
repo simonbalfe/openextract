@@ -16,9 +16,7 @@ export type FingerprintGeography = {
 
 export type BrowserIdentity = {
   contextOptions: BrowserContextOptions;
-  countryCode?: string;
   script: string;
-  signature: string;
 };
 
 const proxyGeographies: FingerprintGeography[] = [
@@ -99,10 +97,6 @@ function localGeography(): Omit<FingerprintGeography, "countryCode"> {
   };
 }
 
-function normalizeRandom(random: () => number): number {
-  return Math.min(Math.max(random(), 0), 0.9999999999999999);
-}
-
 export function selectProxyGeography(countryCode: string): FingerprintGeography {
   const normalized = countryCode.trim().toUpperCase();
   const geography = proxyGeographies.find((candidate) => candidate.countryCode === normalized);
@@ -152,24 +146,9 @@ function browserHeaders(generated: BrowserFingerprintWithHeaders): Record<string
   );
 }
 
-function fingerprintSignature(generated: BrowserFingerprintWithHeaders): string {
-  const { navigator, screen, videoCard } = generated.fingerprint;
-  return [
-    navigator.userAgent,
-    navigator.language,
-    navigator.hardwareConcurrency,
-    screen.width,
-    screen.height,
-    screen.devicePixelRatio,
-    videoCard.vendor,
-    videoCard.renderer,
-  ].join("|");
-}
-
 export function createBrowserIdentity(
   browserVersion: string,
   proxyCountryCode?: string,
-  random: () => number = Math.random,
 ): BrowserIdentity {
   const proxyGeography = proxyCountryCode ? selectProxyGeography(proxyCountryCode) : undefined;
   const geography = proxyGeography ?? localGeography();
@@ -178,10 +157,9 @@ export function createBrowserIdentity(
     operatingSystems: geography.operatingSystems,
   });
   const { navigator, screen } = generated.fingerprint;
-  const colorScheme = normalizeRandom(random) < 0.5 ? "light" : "dark";
   return {
     contextOptions: {
-      colorScheme,
+      colorScheme: Math.random() < 0.5 ? "light" : "dark",
       deviceScaleFactor: screen.devicePixelRatio,
       extraHTTPHeaders: browserHeaders(generated),
       hasTouch: (navigator.maxTouchPoints ?? 0) > 0,
@@ -198,9 +176,7 @@ export function createBrowserIdentity(
         height: screen.height,
       },
     },
-    ...(proxyGeography ? { countryCode: proxyGeography.countryCode } : {}),
     script: injector.getInjectableScript(generated),
-    signature: fingerprintSignature(generated),
   };
 }
 
