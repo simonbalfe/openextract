@@ -7,6 +7,7 @@ import {
   installBrowserIdentity,
 } from "./fingerprint.ts";
 import { createProxySession, hasProxy, proxyCountryCode } from "./proxy.ts";
+import { serializeRenderedPage } from "./shadow.ts";
 import { hasCapsolver, solveCloudflare } from "./solvers.ts";
 
 export async function launchBrowser(attempts = 6): Promise<Browser> {
@@ -58,10 +59,11 @@ export async function render(
     for (let attempt = 0; attempt < 4 && isChallenge(await page.title().catch(() => "")); attempt++) {
       await page.waitForTimeout(2500);
     }
-    let html = await page.content();
+    let html = await page.evaluate(serializeRenderedPage, undefined);
 
     if (options.solve && hasTurnstile(html) && !isChallenge(html)) {
-      html = await solveTurnstile(page, target, html);
+      await solveTurnstile(page, target, html);
+      html = await page.evaluate(serializeRenderedPage, undefined);
     }
 
     if (options.solve && session && hasCapsolver && isChallenge(html)) {
@@ -77,7 +79,7 @@ export async function render(
       page = await context.newPage();
       await page.goto(target, { waitUntil: "domcontentloaded", timeout: 30000 });
       await page.waitForLoadState("networkidle", { timeout: 10000 }).catch(() => {});
-      html = await page.content();
+      html = await page.evaluate(serializeRenderedPage, undefined);
     }
     return html;
   } finally {

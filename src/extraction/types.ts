@@ -2,8 +2,7 @@ export type ExtractProvider =
   | "impit"
   | "patchright"
   | "patchright+proxy"
-  | "patchright+solver"
-  | "tavily";
+  | "patchright+solver";
 
 export type ExtractOutcome = "ok" | "dead" | "failed";
 
@@ -14,7 +13,7 @@ export type BrowserOptions = {
 
 export type ExtractAttempt = {
   provider: ExtractProvider;
-  outcome: "ok" | "empty" | "blocked" | "http-error" | "error" | "skipped";
+  outcome: "ok" | "empty" | "render-required" | "blocked" | "http-error" | "error" | "skipped";
   status?: number;
   durationMs: number;
   detail?: string;

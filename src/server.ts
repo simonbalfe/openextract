@@ -6,6 +6,7 @@ import { ConcurrencyLimiter, QueueAbortedError, QueueSaturatedError } from "./co
 import { parseEnvironment } from "./config/environment.ts";
 import { extract } from "./extraction/extract.ts";
 import { firstLine } from "./support/errors.ts";
+import { testPage } from "./ui.ts";
 
 const extractRequestSchema = z.object({ url: z.string() });
 const environment = parseEnvironment(process.env);
@@ -24,6 +25,11 @@ const server = Bun.serve({
   port: environment.PORT,
   async fetch(request) {
     const requestURL = new URL(request.url);
+    if (requestURL.pathname === "/" && request.method === "GET") {
+      return new Response(testPage, {
+        headers: { "content-type": "text/html; charset=utf-8" },
+      });
+    }
     if (requestURL.pathname === "/healthz") {
       return Response.json({
         ok: true,

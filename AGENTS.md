@@ -4,7 +4,8 @@ OpenExtract is a standalone Bun and TypeScript page-content extraction service.
 
 ## Development
 
-- Keep the extraction ladder cheap-first: direct HTTP, local Patchright, proxy or solver escalation, then Tavily when configured.
+- Keep the extraction ladder local: direct HTTP, local Patchright, then proxy or solver escalation when configured.
+- Keep managed provider fallbacks in callers. Do not add Exa, Tavily, or similar APIs to OpenExtract.
 - Keep the HTTP-to-browser decision conservative and covered by tests.
 - Do not expose credentials in logs or API responses.
 - Run `bun run typecheck` and `bun test` after source changes.

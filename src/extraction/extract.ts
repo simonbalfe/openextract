@@ -1,8 +1,8 @@
-import { tavily } from "@tavily/core";
 import { Impit } from "impit";
 import { extractHTML } from "./html.ts";
 import { pdfToText } from "./pdf.ts";
-import { isBlockPageContent, needsBrowser } from "./render.ts";
+import { classifyPage } from "./render.ts";
+import type { PageClassification } from "./render.ts";
 import type { BrowserOptions, ExtractAttempt, ExtractProvider, ExtractResult } from "./types.ts";
 
 type Retrieved = {
@@ -10,7 +10,7 @@ type Retrieved = {
   contentType: ExtractResult["contentType"];
   links: string[];
   status?: number;
-  renderRequired?: boolean;
+  classification?: PageClassification;
 };
 
 type Rung = {
@@ -27,12 +27,8 @@ type Capabilities = {
 };
 
 const MAX_CHARACTERS = 12_000;
-const DEAD_STATUSES = new Set([401, 404, 410]);
+const DEAD_STATUSES = new Set([404, 410]);
 const impit = new Impit({ browser: "chrome", timeout: 15_000 });
-
-function debug(message: string): void {
-  if (process.env.OPEN_EXTRACT_DEBUG === "1") console.error(`[openextract] ${message}`);
-}
 
 function validateURL(input: string): string {
   const url = new URL(input);
@@ -42,33 +38,30 @@ function validateURL(input: string): string {
   return url.href;
 }
 
-function isUsable(content: string, contentType: ExtractResult["contentType"]): boolean {
-  if (contentType === "pdf") return content.trim().length >= 10;
-  const value = content.trim();
-  return Boolean(value) && !isBlockPageContent(value);
-}
-
 function bounded(content: string): string {
   const value = content.trim();
   if (value.length <= MAX_CHARACTERS) return value;
   return `${value.slice(0, MAX_CHARACTERS)}\n\n[truncated]`;
 }
 
-function classify(result: Retrieved): ExtractAttempt["outcome"] {
+function assess(result: Retrieved): Pick<ExtractAttempt, "outcome" | "detail"> {
   if (result.status !== undefined && result.status >= 400) {
-    return result.status === 403 || result.status === 429 ? "blocked" : "http-error";
+    return {
+      outcome: result.status === 401 || result.status === 403 || result.status === 429 ? "blocked" : "http-error",
+      detail: `HTTP ${result.status}`,
+    };
   }
-  if (!result.content) return "empty";
-  if (result.renderRequired) return "blocked";
-  return isUsable(result.content, result.contentType) ? "ok" : "blocked";
-}
-
-function detail(result: Retrieved): string | undefined {
-  if (result.status !== undefined && result.status >= 400) return `HTTP ${result.status}`;
-  if (!result.content) return "No content returned";
-  if (result.renderRequired) return "HTTP response requires browser rendering";
-  if (!isUsable(result.content, result.contentType)) return "Response appears to be a JavaScript shell or block page";
-  return undefined;
+  if (!result.content.trim()) return { outcome: "empty", detail: "No content returned" };
+  if (result.classification?.kind === "blocked") {
+    return { outcome: "blocked", detail: result.classification.reason };
+  }
+  if (result.classification?.kind === "needs-browser") {
+    return { outcome: "render-required", detail: result.classification.reason };
+  }
+  if (result.contentType === "pdf" && result.content.trim().length < 10) {
+    return { outcome: "empty", detail: "Extracted PDF content was too short" };
+  }
+  return { outcome: "ok" };
 }
 
 async function retrieveWithImpit(url: string): Promise<Retrieved> {
@@ -86,10 +79,22 @@ async function retrieveWithImpit(url: string): Promise<Retrieved> {
   if (header.includes("html") || !header) {
     const html = await response.text();
     const extracted = extractHTML(html, url);
-    return { ...extracted, contentType: "html", status: response.status, renderRequired: needsBrowser(html) };
+    return {
+      ...extracted,
+      contentType: "html",
+      status: response.status,
+      classification: classifyPage(extracted.content, html),
+    };
   }
   if (header.includes("text")) {
-    return { content: (await response.text()).trim(), contentType: "text", links: [], status: response.status };
+    const content = (await response.text()).trim();
+    return {
+      content,
+      contentType: "text",
+      links: [],
+      status: response.status,
+      classification: classifyPage(content),
+    };
   }
   return { content: "", contentType: "unknown", links: [], status: response.status };
 }
@@ -98,24 +103,16 @@ function browserRetriever(render: BrowserRender, useProxy: boolean, solve: boole
   return async (url) => {
     const html = await render(url, { useProxy, solve });
     const extracted = extractHTML(html, url);
-    return { ...extracted, contentType: "html", status: 200 };
-  };
-}
-
-function tavilyRetriever(apiKey: string): (url: string) => Promise<Retrieved> {
-  const client = tavily({ apiKey });
-  return async (url) => {
-    const response = await client.extract([url], { extractDepth: "advanced", format: "markdown" });
     return {
-      content: response.results[0]?.rawContent?.trim() ?? "",
-      contentType: "text",
-      links: [],
+      ...extracted,
+      contentType: "html",
+      status: 200,
+      classification: classifyPage(extracted.content, html),
     };
   };
 }
 
 function ladder(render: BrowserRender, capabilities: Capabilities): Rung[] {
-  const tavilyAPIKey = process.env.TAVILY_API_KEY ?? "";
   return [
     { provider: "impit", enabled: true, retrieve: retrieveWithImpit },
     { provider: "patchright", enabled: true, retrieve: browserRetriever(render, false, false) },
@@ -129,7 +126,6 @@ function ladder(render: BrowserRender, capabilities: Capabilities): Rung[] {
       enabled: capabilities.solver,
       retrieve: browserRetriever(render, capabilities.proxy, true),
     },
-    { provider: "tavily", enabled: Boolean(tavilyAPIKey), retrieve: tavilyRetriever(tavilyAPIKey) },
   ];
 }
 
@@ -139,7 +135,6 @@ export async function extract(input: string, render: BrowserRender, capabilities
   let lastProvider: ExtractProvider = "impit";
   let lastType: ExtractResult["contentType"] = "unknown";
 
-  debug(`start ${url}`);
   for (const rung of ladder(render, capabilities)) {
     lastProvider = rung.provider;
     if (!rung.enabled) {
@@ -150,14 +145,13 @@ export async function extract(input: string, render: BrowserRender, capabilities
     try {
       const result = await rung.retrieve(url);
       lastType = result.contentType;
-      const outcome = classify(result);
-      const attemptDetail = detail(result);
+      const assessment = assess(result);
       attempts.push({
         provider: rung.provider,
-        outcome,
+        outcome: assessment.outcome,
         ...(result.status === undefined ? {} : { status: result.status }),
         durationMs: Math.round(performance.now() - started),
-        ...(attemptDetail ? { detail: attemptDetail } : {}),
+        ...(assessment.detail ? { detail: assessment.detail } : {}),
       });
       if (result.status !== undefined && DEAD_STATUSES.has(result.status)) {
         return {
@@ -170,7 +164,7 @@ export async function extract(input: string, render: BrowserRender, capabilities
           attempts,
         };
       }
-      if (outcome === "ok") {
+      if (assessment.outcome === "ok") {
         return {
           url,
           content: bounded(result.content),
