@@ -10,6 +10,21 @@ The local extraction ladder is:
 
 Managed provider fallbacks belong to the calling application, not OpenExtract.
 
+## Architecture
+
+```mermaid
+flowchart LR
+    URL[URL] --> HTTP[Fetch directly]
+    HTTP --> CHECK{Readable?}
+    CHECK -->|Yes| CLEAN[Extract and clean content]
+    CHECK -->|No| BROWSER[Render in browser]
+    BROWSER --> RENDERED{Readable?}
+    RENDERED -->|Yes| CLEAN
+    RENDERED -->|No| ESCALATE[Retry with proxy or solver]
+    ESCALATE --> CLEAN
+    CLEAN --> MARKDOWN[Markdown + links]
+```
+
 ## Run
 
 ```sh
