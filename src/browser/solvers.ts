@@ -72,13 +72,15 @@ async function createSolverTask(
     }).then((response) => response.json()),
   );
   if (created.errorId) {
-    throw new Error(`createTask: ${created.errorDescription ?? created.errorCode}`);
+    throw new Error(
+      `createTask ${created.errorCode ?? "failed"}: ${created.errorDescription ?? "unknown error"}`,
+    );
   }
   const taskID = created.taskId;
   if (!taskID) throw new Error("createTask returned no taskId");
 
-  for (let attempt = 0; attempt < 40; attempt++) {
-    await Bun.sleep(3000);
+  for (let attempt = 0; attempt < 120; attempt++) {
+    await Bun.sleep(1000);
     const result = solverTaskResponseSchema.parse(
       await fetch(`${baseURL}/getTaskResult`, {
         method: "POST",
@@ -87,7 +89,9 @@ async function createSolverTask(
       }).then((response) => response.json()),
     );
     if (result.errorId) {
-      throw new Error(`getTaskResult: ${result.errorDescription ?? result.errorCode}`);
+      throw new Error(
+        `getTaskResult ${result.errorCode ?? "failed"}: ${result.errorDescription ?? "unknown error"}`,
+      );
     }
     if (result.status === "ready") {
       return result.solution ?? {};
@@ -117,10 +121,17 @@ export async function solveToken(
   throw new Error(`no token for turnstile: ${firstLine(lastError ?? "no solver configured")}`);
 }
 
-export async function solveCloudflare(target: string, proxy: string): Promise<SolverSolution> {
+export async function solveCloudflare(
+  target: string,
+  proxy: string,
+  userAgent: string,
+  html: string,
+): Promise<SolverSolution> {
   return createSolverTask(solvers.capsolver.baseURL, capsolverKey, {
     type: "AntiCloudflareTask",
     websiteURL: target,
     proxy,
+    userAgent,
+    html,
   });
 }

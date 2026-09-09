@@ -15,7 +15,6 @@ type Retrieved = {
 
 type Rung = {
   provider: ExtractProvider;
-  enabled: boolean;
   retrieve: (url: string) => Promise<Retrieved>;
 };
 
@@ -112,35 +111,34 @@ function browserRetriever(render: BrowserRender, useProxy: boolean, solve: boole
   };
 }
 
-function ladder(render: BrowserRender, capabilities: Capabilities): Rung[] {
-  return [
-    { provider: "impit", enabled: true, retrieve: retrieveWithImpit },
-    { provider: "patchright", enabled: true, retrieve: browserRetriever(render, false, false) },
-    {
-      provider: "patchright+proxy",
-      enabled: capabilities.proxy,
-      retrieve: browserRetriever(render, true, false),
-    },
-    {
-      provider: "patchright+solver",
-      enabled: capabilities.solver,
-      retrieve: browserRetriever(render, capabilities.proxy, true),
-    },
+function ladder(render: BrowserRender, camoufoxRender: BrowserRender, capabilities: Capabilities): Rung[] {
+  const rungs: Rung[] = [
+    { provider: "impit", retrieve: retrieveWithImpit },
+    { provider: "patchright", retrieve: browserRetriever(render, false, false) },
+    { provider: "camoufox", retrieve: browserRetriever(camoufoxRender, false, false) },
   ];
+  if (capabilities.proxy || capabilities.solver) {
+    rungs.push({
+      provider: capabilities.solver ? "patchright+solver" : "patchright+proxy",
+      retrieve: browserRetriever(render, capabilities.proxy, capabilities.solver),
+    });
+  }
+  return rungs;
 }
 
-export async function extract(input: string, render: BrowserRender, capabilities: Capabilities): Promise<ExtractResult> {
+export async function extract(
+  input: string,
+  render: BrowserRender,
+  camoufoxRender: BrowserRender,
+  capabilities: Capabilities,
+): Promise<ExtractResult> {
   const url = validateURL(input);
   const attempts: ExtractAttempt[] = [];
   let lastProvider: ExtractProvider = "impit";
   let lastType: ExtractResult["contentType"] = "unknown";
 
-  for (const rung of ladder(render, capabilities)) {
+  for (const rung of ladder(render, camoufoxRender, capabilities)) {
     lastProvider = rung.provider;
-    if (!rung.enabled) {
-      attempts.push({ provider: rung.provider, outcome: "skipped", durationMs: 0, detail: "Not configured" });
-      continue;
-    }
     const started = performance.now();
     try {
       const result = await rung.retrieve(url);

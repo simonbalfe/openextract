@@ -8,7 +8,7 @@ OpenExtract is a standalone Bun and TypeScript page-content extraction service.
 - Keep managed provider fallbacks in callers. Do not add Exa, Tavily, or similar APIs to OpenExtract.
 - Keep the HTTP-to-browser decision conservative and covered by tests.
 - Do not expose credentials in logs or API responses.
-- Run `bun run typecheck` and `bun test` after source changes.
+- Run `bun run typecheck` and `bun run test` after source changes.
 - Validate image changes with `docker build .`.
 
 ## Documentation

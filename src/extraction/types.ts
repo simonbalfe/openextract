@@ -1,6 +1,7 @@
 export type ExtractProvider =
   | "impit"
   | "patchright"
+  | "camoufox"
   | "patchright+proxy"
   | "patchright+solver";
 

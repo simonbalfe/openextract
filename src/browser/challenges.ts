@@ -21,9 +21,13 @@ function turnstileSolved(html: string): boolean {
 }
 
 async function clickTurnstile(page: Page): Promise<boolean> {
-  const element = await page.$(".cf-turnstile, [data-sitekey]");
-  if (!element) return false;
-  const box = await element.boundingBox();
+  const challengeFrame = page
+    .frames()
+    .find((frame) => frame.url().startsWith("https://challenges.cloudflare.com/"));
+  const element = challengeFrame
+    ? challengeFrame.getByRole("checkbox").first()
+    : page.locator(".cf-turnstile, [data-sitekey]").first();
+  const box = await element.boundingBox().catch(() => null);
   if (!box) return false;
   const x = box.x + 28;
   const y = box.y + box.height / 2;
@@ -68,13 +72,14 @@ export async function solveTurnstile(
   target: string,
   initialHTML: string,
 ): Promise<string> {
-  const sitekey = initialHTML.match(turnstileSitekeyPattern)?.[1] ?? null;
-  if (!sitekey) return initialHTML;
-
-  await clickTurnstile(page).catch(() => false);
-  await page.waitForTimeout(4000);
+  const clicked = await clickTurnstile(page).catch(() => false);
+  if (clicked) await page.waitForTimeout(8000);
   await page.waitForLoadState("networkidle", { timeout: 8000 }).catch(() => {});
   let html = await page.content();
+  if (!isChallenge(await page.title().catch(() => ""))) return html;
+
+  const sitekey = initialHTML.match(turnstileSitekeyPattern)?.[1] ?? null;
+  if (!sitekey) return html;
   if (turnstileSolved(html) || !hasTurnstile(html)) return html;
 
   if (solverOrder().length > 0) {

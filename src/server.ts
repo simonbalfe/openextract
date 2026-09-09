@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { launchBrowser, render } from "./browser/browser.ts";
+import { closeCamoufox, renderWithCamoufox } from "./browser/camoufox.ts";
 import { hasProxy } from "./browser/proxy.ts";
 import { hasSolver, solverOrder } from "./browser/solvers.ts";
 import { ConcurrencyLimiter, QueueAbortedError, QueueSaturatedError } from "./concurrency/limiter.ts";
@@ -33,7 +34,8 @@ const server = Bun.serve({
     if (requestURL.pathname === "/healthz") {
       return Response.json({
         ok: true,
-        fingerprints: "rotating",
+        fingerprints: "patchright+camoufox",
+        browsers: ["patchright", "camoufox"],
         proxy: hasProxy,
         solvers: solverOrder(),
         limits: {
@@ -52,6 +54,8 @@ const server = Bun.serve({
               body.url,
               (target, options) =>
                 browserLimiter.run(() => render(browser, target, options), request.signal),
+              (target) =>
+                browserLimiter.run(() => renderWithCamoufox(target), request.signal),
               {
                 proxy: hasProxy,
                 solver: hasSolver,
@@ -89,7 +93,7 @@ const server = Bun.serve({
 
 async function shutdown(): Promise<void> {
   server.stop();
-  await browser.close().catch(() => {});
+  await Promise.all([browser.close().catch(() => {}), closeCamoufox()]);
   process.exit(0);
 }
 
@@ -97,5 +101,5 @@ process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
 
 console.log(
-  `openextract service listening port=${server.port} fingerprints=rotating proxy=${hasProxy ? "on" : "off"} solvers=${solverOrder().join(",") || "none"} concurrency=${environment.OPENEXTRACT_MAX_CONCURRENCY} browserConcurrency=${environment.OPENEXTRACT_BROWSER_CONCURRENCY} maxWaiting=${environment.OPENEXTRACT_MAX_WAITING}`,
+  `openextract service listening port=${server.port} browsers=patchright,camoufox proxy=${hasProxy ? "on" : "off"} solvers=${solverOrder().join(",") || "none"} concurrency=${environment.OPENEXTRACT_MAX_CONCURRENCY} browserConcurrency=${environment.OPENEXTRACT_BROWSER_CONCURRENCY} maxWaiting=${environment.OPENEXTRACT_MAX_WAITING}`,
 );

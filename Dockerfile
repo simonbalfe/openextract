@@ -3,7 +3,10 @@ FROM oven/bun:1-slim AS typecheck
 WORKDIR /srv
 
 COPY package.json bun.lock ./
-RUN bun install --frozen-lockfile
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends python3 make g++ \
+    && bun install --frozen-lockfile \
+    && rm -rf /var/lib/apt/lists/*
 
 COPY tsconfig.json ./
 COPY src ./src
@@ -15,10 +18,14 @@ USER root
 WORKDIR /srv
 
 COPY package.json bun.lock ./
-RUN bun install --frozen-lockfile --production --backend=copyfile \
-    && bunx patchright install --with-deps --no-shell --no-progress chromium \
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends python3 make g++ \
+    && bun install --frozen-lockfile --production --backend=copyfile \
+    && bunx patchright install --with-deps --no-shell --no-progress chrome \
+    && bunx camoufox-js fetch \
     && apt-get update \
     && apt-get install -y --no-install-recommends xauth ca-certificates \
+    && apt-get purge -y --auto-remove python3 make g++ \
     && find /root/.cache/ms-playwright -maxdepth 1 -type d -name 'ffmpeg-*' -exec rm -rf {} + \
     && rm -rf /root/.bun/install/cache /var/lib/apt/lists/*
 

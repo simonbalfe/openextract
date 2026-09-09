@@ -2,10 +2,7 @@ import { chromium, type Browser } from "patchright";
 import type { BrowserOptions } from "../extraction/types.ts";
 import { firstLine } from "../support/errors.ts";
 import { hasTurnstile, isChallenge, solveTurnstile } from "./challenges.ts";
-import {
-  createBrowserIdentity,
-  installBrowserIdentity,
-} from "./fingerprint.ts";
+import { createBrowserIdentity, installBrowserIdentity } from "./fingerprint.ts";
 import { createProxySession, hasProxy, proxyCountryCode } from "./proxy.ts";
 import { serializeRenderedPage } from "./shadow.ts";
 import { hasCapsolver, solveCloudflare } from "./solvers.ts";
@@ -14,12 +11,8 @@ export async function launchBrowser(attempts = 6): Promise<Browser> {
   for (let attempt = 1; attempt <= attempts; attempt++) {
     try {
       const browser = await chromium.launch({
-        headless: false,
-        args: [
-          "--enable-unsafe-swiftshader",
-          "--use-angle=swiftshader",
-          "--use-gl=angle",
-        ],
+        channel: "chrome",
+        headless: !process.env.DISPLAY,
       });
       console.log(`browser launched attempt=${attempt}`);
       return browser;
@@ -38,16 +31,22 @@ export async function render(
   options: BrowserOptions,
 ): Promise<string> {
   const useProxy = options.useProxy && hasProxy;
-  const identity = createBrowserIdentity(browser.version(), useProxy ? proxyCountryCode : undefined);
   const session = useProxy ? createProxySession() : null;
+  const identity = (() => {
+    try {
+      return createBrowserIdentity(browser.version(), useProxy ? proxyCountryCode : undefined);
+    } catch (error) {
+      console.warn(`browser fingerprint unavailable version=${browser.version()} error=${firstLine(error)}`);
+      return undefined;
+    }
+  })();
 
-  async function createContext(userAgent?: string) {
+  async function createContext() {
     const context = await browser.newContext({
-      ...identity.contextOptions,
+      ...identity?.contextOptions,
       ...(session ? { proxy: session.browserProxy } : {}),
-      ...(userAgent ? { userAgent } : {}),
     });
-    if (!userAgent) await installBrowserIdentity(context, identity);
+    if (identity) await installBrowserIdentity(context, identity);
     return context;
   }
 
@@ -55,29 +54,40 @@ export async function render(
   try {
     let page = await context.newPage();
     await page.goto(target, { waitUntil: "domcontentloaded", timeout: 30000 });
-    await page.waitForLoadState("networkidle", { timeout: 10000 }).catch(() => {});
-    for (let attempt = 0; attempt < 4 && isChallenge(await page.title().catch(() => "")); attempt++) {
-      await page.waitForTimeout(2500);
+    const userAgent = await page.evaluate(() => navigator.userAgent);
+    const challenged = isChallenge(await page.title().catch(() => ""));
+    if (!challenged) {
+      await page.waitForLoadState("networkidle", { timeout: 10000 }).catch(() => {});
+    } else if (!options.solve) {
+      for (let attempt = 0; attempt < 4 && isChallenge(await page.title().catch(() => "")); attempt++) {
+        await page.waitForTimeout(2500);
+      }
     }
     let html = await page.evaluate(serializeRenderedPage, undefined);
 
-    if (options.solve && hasTurnstile(html) && !isChallenge(html)) {
-      await solveTurnstile(page, target, html);
+    if (options.solve && hasTurnstile(html)) {
+      await solveTurnstile(page, page.url(), html);
       html = await page.evaluate(serializeRenderedPage, undefined);
     }
 
     if (options.solve && session && hasCapsolver && isChallenge(html)) {
-      const solution = await solveCloudflare(target, session.solverProxy);
+      const challengeURL = page.url();
+      const solution = await solveCloudflare(
+        challengeURL,
+        session.solverProxy,
+        userAgent,
+        html,
+      );
       const cookies = Object.entries(solution.cookies ?? {}).map(([name, value]) => ({
         name,
         value: String(value),
-        url: target,
+        url: challengeURL,
       }));
       await context.close().catch(() => {});
-      context = await createContext(solution.userAgent);
+      context = await createContext();
       if (cookies.length > 0) await context.addCookies(cookies);
       page = await context.newPage();
-      await page.goto(target, { waitUntil: "domcontentloaded", timeout: 30000 });
+      await page.goto(challengeURL, { waitUntil: "domcontentloaded", timeout: 30000 });
       await page.waitForLoadState("networkidle", { timeout: 10000 }).catch(() => {});
       html = await page.evaluate(serializeRenderedPage, undefined);
     }
